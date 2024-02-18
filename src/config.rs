@@ -11,6 +11,13 @@ pub struct LangConfig {
     /// Pairs of multi-line comment openers/closers.
     pub multiline_comments: Vec<(String, String)>,
 
+    /// Pairs of string starters/enders.
+    pub strings: Vec<String>,
+
+    // TODO: use regexes?
+    /// Tokens which should be excluded from participating in other tokens.
+    pub blacklist: Vec<String>,
+
     /// Whether or not to keep track of how many multi-line comments were opened; defaults to `false`.
     pub nested_comments: bool,
 }
@@ -28,6 +35,16 @@ impl LangConfig {
 
     pub fn multiline_comment(mut self, start: &str, end: &str) -> Self {
         self.multiline_comments.push((start.to_string(), end.to_string()));
+        self
+    }
+
+    pub fn string(mut self, delimiter: &str) -> Self {
+        self.strings.push(delimiter.to_string());
+        self
+    }
+
+    pub fn blacklist(mut self, token: &str) -> Self {
+        self.blacklist.push(token.to_string());
         self
     }
 

@@ -2,7 +2,7 @@ use std::io::{BufRead, IoSlice};
 
 use crate::*;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct Range {
     start: usize,
     end: usize,
@@ -99,7 +99,7 @@ impl NegativeRange {
 
     fn remove(&mut self, start: usize, end: usize) {
         let neg_start = start.saturating_sub(1);
-        let neg_end = end.saturating_sub(1);
+        let neg_end = end;
 
         self.ranges = self.ranges.drain(..).flat_map(|range| -> [Option<Range>; 2] {
             let mut lhs = None;
@@ -110,25 +110,27 @@ impl NegativeRange {
                 // range : [=====...
                 // input :    [==...
                 // lhs   : [=]
-                lhs = Some(Range::new(range.start, neg_start));
+                lhs = Some(Range::new(range.start, neg_start.min(range.end)));
             }
             if range.end > neg_end {
                 // The input doesn't end at the rhs of the range:
                 // range : ...=====]
                 // input : ...==]
                 // rhs   :       [=]
-                rhs = Some(Range::new(neg_end, range.end));
+                rhs = Some(Range::new(neg_end.max(range.start), range.end));
             }
+
             [lhs, rhs]
         }).flatten().collect();
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum TokenKind {
     LineComment,
     MultiStart(usize),
     MultiEnd(usize),
+    String(usize),
 }
 
 pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Write) {
@@ -139,24 +141,42 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
             (pair.0.clone(), TokenKind::MultiStart(index)),
             (pair.1.clone(), TokenKind::MultiEnd(index))
         ])
+        .chain(config.strings
+                .iter()
+                .enumerate()
+                .map(|(index, delimiter)| (delimiter.clone(), TokenKind::String(index)))
+        )
         .chain(config.line_comments.iter().map(|token| (token.clone(), TokenKind::LineComment)))
         .collect::<Vec<_>>();
 
-    let newline = '\n'.to_string();
-    let newline = newline.as_bytes();
+    let newline = "\n";
+    // A value that gets substituted in in-place of strings
+    let string_placeholder = format!("{0}…{0}", config.strings.first().cloned().unwrap_or("\"".to_string()));
+
     let mut matches = Vec::with_capacity(64);
 
     let mut multiline_comments: Vec<usize> = Vec::new();
     let mut multiline_ranges = Ranges::empty();
 
+    let mut current_string : Option<usize> = None;
+    let mut string_ranges = Ranges::empty();
+
     for line in input.lines() {
         multiline_ranges.next_line();
+        string_ranges.next_line();
         let line = line.expect("Couldn't read from input!");
         let mut line_range = Range::new(0, 0);
 
         for (token_string, token_kind) in all_tokens.iter() {
-            for (index, match_str) in line.match_indices(token_string) {
-                matches.push((index, index + match_str.len() + 1, *token_kind));
+            for (start, match_str) in line.match_indices(token_string) {
+                matches.push((start, start + match_str.len(), *token_kind));
+            }
+        }
+        for blacklist in config.blacklist.iter() {
+            for (blacklist_start, match_str) in line.match_indices(blacklist) {
+                let blacklist_end = blacklist_start + match_str.len();
+                // TODO: use `Range` to compare things cleanly
+                matches.retain(|(start, end, _)| blacklist_end <= *start || *end <= blacklist_start);
             }
         }
         matches.sort_unstable_by_key(|(index, _, _)| *index);
@@ -164,13 +184,13 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
         for (start, end, token_kind) in matches.drain(..) {
             match token_kind {
                 TokenKind::LineComment => {
-                    if multiline_ranges.contains(start) {
+                    if multiline_ranges.contains(start) || string_ranges.contains(start) {
                         continue
                     }
                     line_range.widen(start, line.len() + 1);
                 }
                 TokenKind::MultiStart(index) => {
-                    if line_range.contains(start) {
+                    if line_range.contains(start) || string_ranges.contains(start) {
                         continue
                     }
 
@@ -182,7 +202,7 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                     }
                 }
                 TokenKind::MultiEnd(index) => {
-                    if line_range.contains(start) {
+                    if line_range.contains(start) || string_ranges.contains(start) {
                         continue
                     }
 
@@ -196,6 +216,24 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                         multiline_ranges.close(end);
                     }
                 }
+                TokenKind::String(index) => {
+                    if line_range.contains(start) || multiline_ranges.contains(start) {
+                        debug_assert!(current_string.is_none());
+                        continue
+                    }
+
+                    match current_string {
+                        Some(expected) if expected == index => {
+                            current_string = None;
+                            string_ranges.close(end);
+                        }
+                        None => {
+                            current_string = Some(index);
+                            string_ranges.open(start);
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
 
@@ -207,15 +245,30 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
         let mut negative_range = NegativeRange::new(line.len());
         line_range.remove(&mut negative_range);
         multiline_ranges.remove(&mut negative_range);
+        string_ranges.remove(&mut negative_range);
 
-        // println!("{:?} {:?} {:?}", line_range, multiline_ranges, negative_range);
+        // println!("{:?} {:?}", string_ranges, negative_range);
 
         if line.is_empty() {
-            output.write(newline).expect("Couldn't write to output!");
+            output.write(newline.as_bytes()).expect("Couldn't write to output!");
         } else {
-            let slices = negative_range.ranges.into_iter().map(|range| {
-                IoSlice::new(line[range.start..=range.end.min(line.len().saturating_sub(1))].as_bytes())
-            }).chain([IoSlice::new(newline)]).collect::<Vec<_>>();
+            let mut slices = negative_range.ranges
+                .into_iter()
+                .map(|range| {
+                    (IoSlice::new(line[range.start..=range.end.min(line.len().saturating_sub(1))].as_bytes()), range.start)
+                })
+                .chain(string_ranges.open_ranges
+                    .iter()
+                    .map(|start| Range::new(*start, line.len() + 1))
+                    .chain(string_ranges.closed_ranges.iter().cloned())
+                    .map(|range| (IoSlice::new(string_placeholder.as_bytes()), range.start))
+                )
+                .chain([(IoSlice::new(newline.as_bytes()), line.len())])
+                .collect::<Vec<_>>();
+
+            slices.sort_unstable_by_key(|pair| pair.1);
+            let slices = slices.into_iter().map(|pair| pair.0).collect::<Vec<_>>();
+
             output.write_vectored(&slices).expect("Couldn't write to output!");
         }
     }
@@ -264,6 +317,11 @@ mod test {
         test_handle_input(config.clone(), "hello /* world", "hello \n");
         test_handle_input(config.clone(), "hello */ world", "hello */ world\n");
         test_handle_input(config.clone(), "hello /* world */", "hello \n");
+        test_handle_input(
+            config.clone(),
+            "hello /* world */\na very long line with a lot of text",
+            "hello \na very long line with a lot of text\n"
+        );
         test_handle_input(config.clone(), "hello /* world\n*/newline", "hello \nnewline\n");
         test_handle_input(config.clone(), "hello /* world */ included", "hello  included\n");
     }
@@ -293,5 +351,52 @@ mod test {
         // Equivalently, if a multi-line comment is merged with a single line comment, then the latter does not apply
         test_handle_input(alt_config.clone(), "/-- hello -/\nworld", "\nworld\n");
         test_handle_input(alt_config.clone(), "/-\n--/world", "\nworld\n");
+    }
+
+    #[test]
+    fn test_nested_comments() {
+        let config = LangConfig::default()
+            .multiline_comment("/*", "*/")
+            .multiline_comment("(-", "-)")
+            .nested_comments(true);
+
+        test_handle_input(config.clone(), "/* /* abc */ def */hello", "hello\n");
+        test_handle_input(config.clone(), "/* /* abc\n */ def\n*/hello", "\n\nhello\n");
+
+        test_handle_input(config.clone(), "/* (- abc */ def -)hello", "\n");
+        test_handle_input(config.clone(), "/* -) abc */ def", " def\n");
+    }
+
+    #[test]
+    fn test_string() {
+        let config = LangConfig::default()
+            .multiline_comment("/*", "*/")
+            .line_comment("//")
+            .string("\"")
+            .string("'");
+
+        test_handle_input(config.clone(), "let a = \"hello\";", "let a = \"…\";\n");
+        test_handle_input(
+            config.clone(),
+            "let a = \"hello\";\na very long line with a lot of text",
+            "let a = \"…\";\na very long line with a lot of text\n"
+        );
+        test_handle_input(config.clone(), "let a = \"hello // world\";", "let a = \"…\";\n");
+        test_handle_input(config.clone(), "let a = \"Jack'o'lantern\";", "let a = \"…\";\n");
+        test_handle_input(config.clone(), "let a = 'hello';", "let a = \"…\";\n");
+        test_handle_input(config.clone(), "let a = 'hello', 'world';", "let a = \"…\", \"…\";\n");
+
+        test_handle_input(config.clone(), "let a = \"hello /* world \";", "let a = \"…\";\n");
+        test_handle_input(config.clone(), "let a = \"hello /* world \";\n*/ this is // normal", "let a = \"…\";\n*/ this is \n");
+    }
+
+    #[test]
+    fn test_blacklist() {
+        let config = LangConfig::default()
+            .string("'")
+            .blacklist("\\'");
+
+        test_handle_input(config.clone(), "let a = '\\'';", "let a = '…';\n");
+        test_handle_input(config.clone(), "let a = 'hello \\' world';", "let a = '…';\n");
     }
 }

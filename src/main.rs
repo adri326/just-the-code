@@ -11,7 +11,10 @@ fn main() {
         LangConfig::default()
             .extension("lean")
             .line_comment("--")
+            .line_comment("#align")
             .multiline_comment("/-", "-/")
+            .string("\"")
+            .blacklist("\\\"")
             .nested_comments(true),
         LangConfig::default()
             .extension("rs")
@@ -20,6 +23,10 @@ fn main() {
             .extension("c")
             .line_comment("//")
             .multiline_comment("/*", "*/")
+            .string("\"")
+            .string("'")
+            .blacklist("\\'")
+            .blacklist("\\\"")
     ];
 
     let args = std::env::args().collect::<Vec<_>>();
