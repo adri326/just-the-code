@@ -1,4 +1,4 @@
-use std::io::{BufRead, IoSlice};
+use std::io::{BufRead, IoSlice, Write};
 
 use crate::*;
 
@@ -172,6 +172,7 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                 matches.push((start, start + match_str.len(), *token_kind));
             }
         }
+        // TODO: ensure that elements in the blacklist do not overlap
         for blacklist in config.blacklist.iter() {
             for (blacklist_start, match_str) in line.match_indices(blacklist) {
                 let blacklist_end = blacklist_start + match_str.len();
