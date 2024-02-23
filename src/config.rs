@@ -64,7 +64,7 @@ pub struct Config {
     #[serde(default)]
     pub keep_strings: bool,
 
-    #[serde(alias = "lang")]
+    #[serde(alias = "lang", default)]
     pub langs: IndexMap<String, LangConfig>,
 }
 

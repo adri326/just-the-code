@@ -2,6 +2,7 @@ use std::io::{BufRead, IoSlice, Write};
 
 use crate::*;
 
+/// Half-open range `[start; end)`
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Range {
     start: usize,
@@ -31,6 +32,15 @@ impl Range {
     fn remove(&self, negative: &mut NegativeRange) {
         if self.start != self.end {
             negative.remove(self.start, self.end);
+        }
+    }
+
+    /// Returns true if ∃ x, x ∈ self and x ∈ other
+    fn overlaps(&self, other: &Self) -> bool {
+        if self.start == self.end || other.start == other.end {
+            false
+        } else {
+            self.start + 1 <= other.end && other.start + 1 <= self.end
         }
     }
 }
@@ -184,42 +194,39 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
 
         for (token_string, token_kind) in all_tokens.iter() {
             for (start, match_str) in line.match_indices(token_string) {
-                matches.push((start, start + match_str.len(), *token_kind));
+                matches.push((Range::new(start, start + match_str.len()), *token_kind));
             }
         }
-        // TODO: ensure that elements in the blacklist do not overlap
-        for blacklist in config.blacklist.iter() {
-            for (blacklist_start, match_str) in line.match_indices(blacklist) {
-                let blacklist_end = blacklist_start + match_str.len();
-                // TODO: use `Range` to compare things cleanly
-                matches
-                    .retain(|(start, end, _)| blacklist_end <= *start || *end <= blacklist_start);
-            }
-        }
-        matches.sort_unstable_by_key(|(index, _, _)| *index);
 
-        for (start, end, token_kind) in matches.drain(..) {
+        for blacklist in collect_blacklist_ranges(&line, &config.blacklist) {
+            matches.retain(|(range, _)| !range.overlaps(&blacklist));
+        }
+
+        matches.sort_unstable_by_key(|(range, _)| range.start);
+
+        for (range, token_kind) in matches.drain(..) {
             match token_kind {
                 TokenKind::LineComment => {
-                    if multiline_ranges.contains(start) || string_ranges.contains(start) {
+                    if multiline_ranges.contains(range.start) || string_ranges.contains(range.start)
+                    {
                         continue;
                     }
-                    line_range.widen(start, line.len() + 1);
+                    line_range.widen(range.start, line.len() + 1);
                 }
                 TokenKind::MultiStart(index) => {
-                    if line_range.contains(start) || string_ranges.contains(start) {
+                    if line_range.contains(range.start) || string_ranges.contains(range.start) {
                         continue;
                     }
 
                     if config.nested_comments {
-                        multiline_ranges.open(start);
+                        multiline_ranges.open(range.start);
                         multiline_comments.push(index);
                     } else if multiline_ranges.open_ranges.is_empty() {
-                        multiline_ranges.open(start);
+                        multiline_ranges.open(range.start);
                     }
                 }
                 TokenKind::MultiEnd(index) => {
-                    if line_range.contains(start) || string_ranges.contains(start) {
+                    if line_range.contains(range.start) || string_ranges.contains(range.start) {
                         continue;
                     }
 
@@ -234,11 +241,11 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                             multiline_comments.pop();
                         }
 
-                        multiline_ranges.close(end);
+                        multiline_ranges.close(range.end);
                     }
                 }
                 TokenKind::String(index) => {
-                    if line_range.contains(start) || multiline_ranges.contains(start) {
+                    if line_range.contains(range.start) || multiline_ranges.contains(range.start) {
                         debug_assert!(current_string.is_none());
                         continue;
                     }
@@ -246,11 +253,11 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                     match current_string {
                         Some(expected) if expected == index => {
                             current_string = None;
-                            string_ranges.close(end);
+                            string_ranges.close(range.end);
                         }
                         None => {
                             current_string = Some(index);
-                            string_ranges.open(start);
+                            string_ranges.open(range.start);
                         }
                         _ => {}
                     }
@@ -269,8 +276,6 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
         if !config.keep_strings {
             string_ranges.remove(&mut negative_range);
         }
-
-        // println!("{:?} {:?}", string_ranges, negative_range);
 
         if line.is_empty() {
             output
@@ -321,6 +326,24 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
     }
 }
 
+fn collect_blacklist_ranges(line: &str, blacklists: &[String]) -> Vec<Range> {
+    let mut ranges = blacklists
+        .iter()
+        .flat_map(|blacklist| line.match_indices(blacklist))
+        .map(|(start, string)| Range::new(start, start + string.len()))
+        .collect::<Vec<_>>();
+
+    ranges.sort_unstable_by_key(|range| range.start);
+
+    ranges
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|&(i, range)| !ranges.iter().take(i).any(|other| other.overlaps(&range)))
+        .map(|pair| pair.1)
+        .collect()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -331,6 +354,38 @@ mod test {
 
         let output = String::from_utf8(output).expect("handle_input did not return valid UTF-8");
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_overlap() {
+        fn test_overlap([xmin, xsup]: [usize; 2], [ymin, ysup]: [usize; 2], positive: bool) {
+            assert_eq!(
+                Range::new(xmin, xsup).overlaps(&Range::new(ymin, ysup)),
+                positive,
+                "Range [{xmin}; {xsup}) should{} overlap with [{ymin}; {ysup})",
+                if positive { "" } else { "n't" }
+            );
+
+            assert_eq!(
+                Range::new(ymin, ysup).overlaps(&Range::new(xmin, xsup)),
+                positive,
+                "Range [{ymin}; {ysup}) should{} overlap with [{xmin}; {xsup})",
+                if positive { "" } else { "n't" }
+            );
+        }
+
+        test_overlap([0, 0], [0, 100], false);
+        test_overlap([50, 50], [0, 100], false);
+        test_overlap([100, 100], [0, 100], false);
+        test_overlap([0, 1], [0, 1], true);
+        test_overlap([0, 1], [1, 2], false);
+        test_overlap([1, 2], [0, 1], false);
+        test_overlap([5, 10], [9, 12], true);
+        test_overlap([5, 10], [3, 6], true);
+        test_overlap([5, 10], [10, 12], false);
+        test_overlap([5, 10], [3, 5], false);
+        test_overlap([5, 10], [4, 11], true);
+        test_overlap([5, 10], [3, 12], true);
     }
 
     #[test]
@@ -499,5 +554,13 @@ mod test {
             "let a = 'hello \\' world';",
             "let a = '…';\n",
         );
+
+        let config = LangConfig::default()
+            .string("'")
+            .blacklist("\\\\")
+            .blacklist("\\'");
+
+        test_handle_input(config.clone(), "let a = '\\\\\\'';", "let a = '…';\n");
+        test_handle_input(config.clone(), "let a = '\\\\';", "let a = '…';\n");
     }
 }

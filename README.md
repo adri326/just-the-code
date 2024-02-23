@@ -83,16 +83,16 @@ This lets you blacklist `\"` in strings, for instance.
 - Whether or not to allow nested comments (`nested_comments`): if enabled, then `a /* /* */ */ b` will become `a  b`.
 If disabled (which is the default), that same piece of code will instead become `a  */ b`.
 
+### Note on `\"`
+
+If your languages uses `"` for strings, then simply adding `\"` to the blacklist is not going to be enough:
+`"\\"` will parse incorrectly, since `\"` will be seen as an escaped quotation mark.
+
+To fix that, blacklist tokens are implemented to be mutually exclusive: two blacklist tokens cannot overlap when matched on a string.
+This means that if you also add `\\` to the blacklist, then `"\\"` will parse correctly:
+`\\` will be seen as one blacklist token, and `\"` won't be interpreted as an escaped quotation mark.
+
 ## Known issues
-
-Currently, when given as blacklist for string separators `\"`,
-`just-the-code` incorrectly misinterprets `"\\"` as a string opening token, followed by some string contents and the blacklisted `\"`,
-so the string won't be considered closed after that.
-
-How to fix this issue in a generic way is tricky.
-I am planning on experimenting with mutually exclusive blacklist expressions:
-by specifying that `\\` and `\"` are blacklisted tokens, and by ensuring that no two blacklist tokens can overlap,
-the string `"\\"` should be handled correctly.
 
 The performance of `ripgrep` also severaly drops when adding `--pre`, since ripgrep essentially needs to `fork()` once for each file searched.
 It might be possible in the future to integrate `just-the-code` directly within `ripgrep`, so that everything can be done within the same process.
