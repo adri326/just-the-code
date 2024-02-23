@@ -4,28 +4,33 @@ use config::*;
 mod parse;
 use parse::*;
 
+fn load_config() -> Config {
+
+    let default_config: Config = toml::from_str(include_str!("./default_config.toml"))
+        .expect("Error parsing default config");
+
+    let Some(custom_config) = directories::ProjectDirs::from("xyz", "Shad Amethyst", "just-the-code") else {
+        return default_config;
+    };
+    let mut custom_config = custom_config.config_dir().to_path_buf();
+    custom_config.push("config.toml");
+
+    let Ok(custom_config) = std::fs::read_to_string(custom_config) else {
+        return default_config;
+    };
+
+    let custom_config = match toml::from_str(&custom_config) {
+        Ok(config) => config,
+        Err(error) => {
+            panic!("Error parsing custom config: {}", error);
+        }
+    };
+
+    default_config.merge(custom_config)
+}
+
 fn main() {
-    let configs: Vec<LangConfig> = vec![
-        LangConfig::default()
-            .extension("lean")
-            .line_comment("--")
-            .line_comment("#align")
-            .multiline_comment("/-", "-/")
-            .string("\"")
-            .blacklist("\\\"")
-            .nested_comments(true),
-        LangConfig::default()
-            .extension("rs")
-            .extension("js")
-            .extension("ts")
-            .extension("c")
-            .line_comment("//")
-            .multiline_comment("/*", "*/")
-            .string("\"")
-            .string("'")
-            .blacklist("\\'")
-            .blacklist("\\\"")
-    ];
+    let config = load_config();
 
     let args = std::env::args().collect::<Vec<_>>();
     if args.len() <= 1 || args.last().map_or(false, |arg| !arg.contains('.')) {
@@ -34,9 +39,10 @@ fn main() {
     }
 
     let extension = args.last().unwrap().split_terminator(".").last().unwrap().to_lowercase();
-    for config in configs {
-        if config.extensions.iter().find(|ext| **ext == extension).is_some() {
-            handle_input(config, std::io::stdin().lock(), std::io::stdout().lock());
+    for mut lang_config in config.langs.into_values().rev() {
+        if lang_config.extensions.iter().find(|ext| **ext == extension).is_some() {
+            lang_config.keep_strings = config.keep_strings;
+            handle_input(lang_config, std::io::stdin().lock(), std::io::stdout().lock());
             return
         }
     }

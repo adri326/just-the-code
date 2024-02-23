@@ -1,5 +1,8 @@
+use indexmap::IndexMap;
 
-#[derive(Default, Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct LangConfig {
     /// A list of extensions that the language will match against; case-insensitive.
     pub extensions: Vec<String>,
@@ -14,20 +17,21 @@ pub struct LangConfig {
     /// Pairs of string starters/enders.
     pub strings: Vec<String>,
 
-    // TODO: use regexes?
     /// Tokens which should be excluded from participating in other tokens.
+    #[serde(default)]
     pub blacklist: Vec<String>,
 
     /// Whether or not to keep track of how many multi-line comments were opened; defaults to `false`.
+    #[serde(default)]
     pub nested_comments: bool,
+
+    /// Whether or not to keep strings around; controlled by the global config.
+    #[serde(skip)]
+    pub keep_strings: bool,
 }
 
+#[cfg(test)]
 impl LangConfig {
-    pub fn extension(mut self, extension: &str) -> Self {
-        self.extensions.push(extension.to_string());
-        self
-    }
-
     pub fn line_comment(mut self, comment: &str) -> Self {
         self.line_comments.push(comment.to_string());
         self
@@ -51,5 +55,27 @@ impl LangConfig {
     pub fn nested_comments(mut self, nested: bool) -> Self {
         self.nested_comments = nested;
         self
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default)]
+    pub keep_strings: bool,
+
+    #[serde(alias = "lang")]
+    pub langs: IndexMap<String, LangConfig>,
+}
+
+impl Config {
+    /// Merges self with other, where the language configs of `other.langs` override those in `self`
+    pub fn merge(mut self, other: Config) -> Self {
+        self.langs.extend(other.langs.into_iter());
+
+        Self {
+            keep_strings: self.keep_strings || other.keep_strings,
+
+            langs: self.langs,
+        }
     }
 }

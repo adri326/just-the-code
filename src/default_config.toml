@@ -1,0 +1,35 @@
+[lang.c_like]
+extensions = ["c", "cpp", "h", "hpp", "rs", "java"]
+
+line_comments = ["//"]
+multiline_comments = [["/*", "*/"]]
+strings = ["\"", "'"]
+
+blacklist = ["\\\"", "\\\\"]
+
+[lang.js_like]
+extensions = ["js", "ts", "jsx", "tsx"]
+
+line_comments = ["//"]
+multiline_comments = [["/*", "*/"], ["<!--", "-->"]]
+strings = ["\"", "'", "`"]
+
+blacklist = ["\\\"", "\\\\"]
+
+[lang.python]
+extensions = ["py"]
+
+line_comments = ["#"]
+multiline_comments = []
+strings = ["\"\"\"", "'''", "\"", "'"]
+
+blacklist = ["\\\"", "\\\\"]
+
+[lang.lean]
+extensions = ["lean"]
+
+line_comments = ["--"]
+multiline_comments = [["/-", "-/"]]
+strings = ["\""]
+
+nested_comments = true

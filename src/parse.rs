@@ -246,7 +246,9 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
         let mut negative_range = NegativeRange::new(line.len());
         line_range.remove(&mut negative_range);
         multiline_ranges.remove(&mut negative_range);
-        string_ranges.remove(&mut negative_range);
+        if !config.keep_strings {
+            string_ranges.remove(&mut negative_range);
+        }
 
         // println!("{:?} {:?}", string_ranges, negative_range);
 
@@ -257,18 +259,23 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                 .into_iter()
                 .map(|range| {
                     (IoSlice::new(line[range.start..=range.end.min(line.len().saturating_sub(1))].as_bytes()), range.start)
-                })
-                .chain(string_ranges.open_ranges
-                    .iter()
-                    .map(|start| Range::new(*start, line.len() + 1))
-                    .chain(string_ranges.closed_ranges.iter().cloned())
-                    .map(|range| (IoSlice::new(string_placeholder.as_bytes()), range.start))
-                )
-                .chain([(IoSlice::new(newline.as_bytes()), line.len())])
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
+
+            if !config.keep_strings {
+                slices = slices.into_iter()
+                    .chain(string_ranges.open_ranges
+                        .iter()
+                        .map(|start| Range::new(*start, line.len() + 1))
+                        .chain(string_ranges.closed_ranges.iter().cloned())
+                        .map(|range| (IoSlice::new(string_placeholder.as_bytes()), range.start))
+                    ).collect();
+            }
 
             slices.sort_unstable_by_key(|pair| pair.1);
-            let slices = slices.into_iter().map(|pair| pair.0).collect::<Vec<_>>();
+            let slices = slices.into_iter()
+                .map(|pair| pair.0)
+                .chain([IoSlice::new(newline.as_bytes())])
+                .collect::<Vec<_>>();
 
             output.write_vectored(&slices).expect("Couldn't write to output!");
         }
