@@ -5,11 +5,12 @@ mod parse;
 use parse::*;
 
 fn load_config() -> Config {
-
     let default_config: Config = toml::from_str(include_str!("./default_config.toml"))
         .expect("Error parsing default config");
 
-    let Some(custom_config) = directories::ProjectDirs::from("xyz", "Shad Amethyst", "just-the-code") else {
+    let Some(custom_config) =
+        directories::ProjectDirs::from("xyz", "Shad Amethyst", "just-the-code")
+    else {
         return default_config;
     };
     let mut custom_config = custom_config.config_dir().to_path_buf();
@@ -38,12 +39,27 @@ fn main() {
         noop();
     }
 
-    let extension = args.last().unwrap().split_terminator(".").last().unwrap().to_lowercase();
+    let extension = args
+        .last()
+        .unwrap()
+        .split_terminator(".")
+        .last()
+        .unwrap()
+        .to_lowercase();
     for mut lang_config in config.langs.into_values().rev() {
-        if lang_config.extensions.iter().find(|ext| **ext == extension).is_some() {
+        if lang_config
+            .extensions
+            .iter()
+            .find(|ext| **ext == extension)
+            .is_some()
+        {
             lang_config.keep_strings = config.keep_strings;
-            handle_input(lang_config, std::io::stdin().lock(), std::io::stdout().lock());
-            return
+            handle_input(
+                lang_config,
+                std::io::stdin().lock(),
+                std::io::stdout().lock(),
+            );
+            return;
         }
     }
 

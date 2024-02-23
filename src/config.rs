@@ -38,7 +38,8 @@ impl LangConfig {
     }
 
     pub fn multiline_comment(mut self, start: &str, end: &str) -> Self {
-        self.multiline_comments.push((start.to_string(), end.to_string()));
+        self.multiline_comments
+            .push((start.to_string(), end.to_string()));
         self
     }
 

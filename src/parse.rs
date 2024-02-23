@@ -10,10 +10,7 @@ struct Range {
 
 impl Range {
     fn new(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end
-        }
+        Self { start, end }
     }
 
     fn contains(&self, index: usize) -> bool {
@@ -24,7 +21,7 @@ impl Range {
         if self.start == self.end {
             self.start = start;
             self.end = end;
-            return
+            return;
         }
 
         self.start = self.start.min(start);
@@ -53,8 +50,8 @@ impl Ranges {
     }
 
     fn contains(&self, index: usize) -> bool {
-        self.open_ranges.iter().any(|start| *start <= index) ||
-            self.closed_ranges.iter().any(|range| range.contains(index))
+        self.open_ranges.iter().any(|start| *start <= index)
+            || self.closed_ranges.iter().any(|range| range.contains(index))
     }
 
     /// Gets rid of all the closed ranges, and shifts all the starting indices for the open ranges to zero.
@@ -93,7 +90,7 @@ struct NegativeRange {
 impl NegativeRange {
     fn new(line_end: usize) -> Self {
         Self {
-            ranges: vec![Range::new(0, line_end)]
+            ranges: vec![Range::new(0, line_end)],
         }
     }
 
@@ -101,27 +98,32 @@ impl NegativeRange {
         let neg_start = start.saturating_sub(1);
         let neg_end = end;
 
-        self.ranges = self.ranges.drain(..).flat_map(|range| -> [Option<Range>; 2] {
-            let mut lhs = None;
-            let mut rhs = None;
+        self.ranges = self
+            .ranges
+            .drain(..)
+            .flat_map(|range| -> [Option<Range>; 2] {
+                let mut lhs = None;
+                let mut rhs = None;
 
-            if neg_start > range.start {
-                // The input doesn't begin at the lhs of the range:
-                // range : [=====...
-                // input :    [==...
-                // lhs   : [=]
-                lhs = Some(Range::new(range.start, neg_start.min(range.end)));
-            }
-            if range.end > neg_end {
-                // The input doesn't end at the rhs of the range:
-                // range : ...=====]
-                // input : ...==]
-                // rhs   :       [=]
-                rhs = Some(Range::new(neg_end.max(range.start), range.end));
-            }
+                if neg_start > range.start {
+                    // The input doesn't begin at the lhs of the range:
+                    // range : [=====...
+                    // input :    [==...
+                    // lhs   : [=]
+                    lhs = Some(Range::new(range.start, neg_start.min(range.end)));
+                }
+                if range.end > neg_end {
+                    // The input doesn't end at the rhs of the range:
+                    // range : ...=====]
+                    // input : ...==]
+                    // rhs   :       [=]
+                    rhs = Some(Range::new(neg_end.max(range.start), range.end));
+                }
 
-            [lhs, rhs]
-        }).flatten().collect();
+                [lhs, rhs]
+            })
+            .flatten()
+            .collect();
     }
 }
 
@@ -134,31 +136,44 @@ enum TokenKind {
 }
 
 pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Write) {
-    let all_tokens = config.multiline_comments
+    let all_tokens = config
+        .multiline_comments
         .iter()
         .enumerate()
-        .flat_map(|(index, pair)| [
-            (pair.0.clone(), TokenKind::MultiStart(index)),
-            (pair.1.clone(), TokenKind::MultiEnd(index))
-        ])
-        .chain(config.strings
+        .flat_map(|(index, pair)| {
+            [
+                (pair.0.clone(), TokenKind::MultiStart(index)),
+                (pair.1.clone(), TokenKind::MultiEnd(index)),
+            ]
+        })
+        .chain(
+            config
+                .strings
                 .iter()
                 .enumerate()
-                .map(|(index, delimiter)| (delimiter.clone(), TokenKind::String(index)))
+                .map(|(index, delimiter)| (delimiter.clone(), TokenKind::String(index))),
         )
-        .chain(config.line_comments.iter().map(|token| (token.clone(), TokenKind::LineComment)))
+        .chain(
+            config
+                .line_comments
+                .iter()
+                .map(|token| (token.clone(), TokenKind::LineComment)),
+        )
         .collect::<Vec<_>>();
 
     let newline = "\n";
     // A value that gets substituted in in-place of strings
-    let string_placeholder = format!("{0}…{0}", config.strings.first().cloned().unwrap_or("\"".to_string()));
+    let string_placeholder = format!(
+        "{0}…{0}",
+        config.strings.first().cloned().unwrap_or("\"".to_string())
+    );
 
     let mut matches = Vec::with_capacity(64);
 
     let mut multiline_comments: Vec<usize> = Vec::new();
     let mut multiline_ranges = Ranges::empty();
 
-    let mut current_string : Option<usize> = None;
+    let mut current_string: Option<usize> = None;
     let mut string_ranges = Ranges::empty();
 
     for line in input.lines() {
@@ -177,7 +192,8 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
             for (blacklist_start, match_str) in line.match_indices(blacklist) {
                 let blacklist_end = blacklist_start + match_str.len();
                 // TODO: use `Range` to compare things cleanly
-                matches.retain(|(start, end, _)| blacklist_end <= *start || *end <= blacklist_start);
+                matches
+                    .retain(|(start, end, _)| blacklist_end <= *start || *end <= blacklist_start);
             }
         }
         matches.sort_unstable_by_key(|(index, _, _)| *index);
@@ -186,13 +202,13 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
             match token_kind {
                 TokenKind::LineComment => {
                     if multiline_ranges.contains(start) || string_ranges.contains(start) {
-                        continue
+                        continue;
                     }
                     line_range.widen(start, line.len() + 1);
                 }
                 TokenKind::MultiStart(index) => {
                     if line_range.contains(start) || string_ranges.contains(start) {
-                        continue
+                        continue;
                     }
 
                     if config.nested_comments {
@@ -204,12 +220,16 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                 }
                 TokenKind::MultiEnd(index) => {
                     if line_range.contains(start) || string_ranges.contains(start) {
-                        continue
+                        continue;
                     }
 
                     // When nested comments are active, verify that the closing comment matches the opening comment;
                     // otherwise, just close the multiline comment, if it is opened.
-                    if !config.nested_comments || multiline_comments.last().map_or(false, |expected| *expected == index) {
+                    if !config.nested_comments
+                        || multiline_comments
+                            .last()
+                            .map_or(false, |expected| *expected == index)
+                    {
                         if config.nested_comments {
                             multiline_comments.pop();
                         }
@@ -220,7 +240,7 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
                 TokenKind::String(index) => {
                     if line_range.contains(start) || multiline_ranges.contains(start) {
                         debug_assert!(current_string.is_none());
-                        continue
+                        continue;
                     }
 
                     match current_string {
@@ -253,31 +273,50 @@ pub fn handle_input(config: LangConfig, input: impl BufRead, mut output: impl Wr
         // println!("{:?} {:?}", string_ranges, negative_range);
 
         if line.is_empty() {
-            output.write(newline.as_bytes()).expect("Couldn't write to output!");
+            output
+                .write(newline.as_bytes())
+                .expect("Couldn't write to output!");
         } else {
-            let mut slices = negative_range.ranges
+            let mut slices = negative_range
+                .ranges
                 .into_iter()
                 .map(|range| {
-                    (IoSlice::new(line[range.start..=range.end.min(line.len().saturating_sub(1))].as_bytes()), range.start)
-                }).collect::<Vec<_>>();
+                    (
+                        IoSlice::new(
+                            line[range.start..=range.end.min(line.len().saturating_sub(1))]
+                                .as_bytes(),
+                        ),
+                        range.start,
+                    )
+                })
+                .collect::<Vec<_>>();
 
             if !config.keep_strings {
-                slices = slices.into_iter()
-                    .chain(string_ranges.open_ranges
-                        .iter()
-                        .map(|start| Range::new(*start, line.len() + 1))
-                        .chain(string_ranges.closed_ranges.iter().cloned())
-                        .map(|range| (IoSlice::new(string_placeholder.as_bytes()), range.start))
-                    ).collect();
+                slices = slices
+                    .into_iter()
+                    .chain(
+                        string_ranges
+                            .open_ranges
+                            .iter()
+                            .map(|start| Range::new(*start, line.len() + 1))
+                            .chain(string_ranges.closed_ranges.iter().cloned())
+                            .map(|range| {
+                                (IoSlice::new(string_placeholder.as_bytes()), range.start)
+                            }),
+                    )
+                    .collect();
             }
 
             slices.sort_unstable_by_key(|pair| pair.1);
-            let slices = slices.into_iter()
+            let slices = slices
+                .into_iter()
                 .map(|pair| pair.0)
                 .chain([IoSlice::new(newline.as_bytes())])
                 .collect::<Vec<_>>();
 
-            output.write_vectored(&slices).expect("Couldn't write to output!");
+            output
+                .write_vectored(&slices)
+                .expect("Couldn't write to output!");
         }
     }
 }
@@ -302,10 +341,18 @@ mod test {
         test_handle_input(LangConfig::default().nested_comments(true), "abc", "abc\n");
 
         test_handle_input(LangConfig::default(), "abc\n", "abc\n");
-        test_handle_input(LangConfig::default().nested_comments(true), "abc\n", "abc\n");
+        test_handle_input(
+            LangConfig::default().nested_comments(true),
+            "abc\n",
+            "abc\n",
+        );
 
         test_handle_input(LangConfig::default(), "abc\ndef", "abc\ndef\n");
-        test_handle_input(LangConfig::default().nested_comments(true), "abc\ndef", "abc\ndef\n");
+        test_handle_input(
+            LangConfig::default().nested_comments(true),
+            "abc\ndef",
+            "abc\ndef\n",
+        );
     }
 
     #[test]
@@ -313,7 +360,11 @@ mod test {
         let config = LangConfig::default().line_comment("//");
 
         test_handle_input(config.clone(), "hello // world", "hello \n");
-        test_handle_input(config.clone(), "hello // world\nuntouched", "hello \nuntouched\n");
+        test_handle_input(
+            config.clone(),
+            "hello // world\nuntouched",
+            "hello \nuntouched\n",
+        );
         test_handle_input(config.clone(), "hello // world // hey", "hello \n");
         test_handle_input(config.clone(), "hello // world\n// hey", "hello \n\n");
     }
@@ -328,10 +379,18 @@ mod test {
         test_handle_input(
             config.clone(),
             "hello /* world */\na very long line with a lot of text",
-            "hello \na very long line with a lot of text\n"
+            "hello \na very long line with a lot of text\n",
         );
-        test_handle_input(config.clone(), "hello /* world\n*/newline", "hello \nnewline\n");
-        test_handle_input(config.clone(), "hello /* world */ included", "hello  included\n");
+        test_handle_input(
+            config.clone(),
+            "hello /* world\n*/newline",
+            "hello \nnewline\n",
+        );
+        test_handle_input(
+            config.clone(),
+            "hello /* world */ included",
+            "hello  included\n",
+        );
     }
 
     #[test]
@@ -341,12 +400,24 @@ mod test {
             .line_comment("//");
 
         // A multiline comment in a single-line comment should be ignored
-        test_handle_input(config.clone(), "hello // /* world\nincluded", "hello \nincluded\n");
-        test_handle_input(config.clone(), "hello // /* world\nincluded */", "hello \nincluded */\n");
+        test_handle_input(
+            config.clone(),
+            "hello // /* world\nincluded",
+            "hello \nincluded\n",
+        );
+        test_handle_input(
+            config.clone(),
+            "hello // /* world\nincluded */",
+            "hello \nincluded */\n",
+        );
 
         // A single-line comment in a multiline comment should be ignored
         test_handle_input(config.clone(), "/* // */hello world", "hello world\n");
-        test_handle_input(config.clone(), "/* // */hello world // commented", "hello world \n");
+        test_handle_input(
+            config.clone(),
+            "/* // */hello world // commented",
+            "hello world \n",
+        );
 
         // If a single-line comment is merged with a multiline comment, then the latter does not apply
         test_handle_input(config.clone(), "//* hello */\nworld", "\nworld\n");
@@ -387,24 +458,46 @@ mod test {
         test_handle_input(
             config.clone(),
             "let a = \"hello\";\na very long line with a lot of text",
-            "let a = \"…\";\na very long line with a lot of text\n"
+            "let a = \"…\";\na very long line with a lot of text\n",
         );
-        test_handle_input(config.clone(), "let a = \"hello // world\";", "let a = \"…\";\n");
-        test_handle_input(config.clone(), "let a = \"Jack'o'lantern\";", "let a = \"…\";\n");
+        test_handle_input(
+            config.clone(),
+            "let a = \"hello // world\";",
+            "let a = \"…\";\n",
+        );
+        test_handle_input(
+            config.clone(),
+            "let a = \"Jack'o'lantern\";",
+            "let a = \"…\";\n",
+        );
         test_handle_input(config.clone(), "let a = 'hello';", "let a = \"…\";\n");
-        test_handle_input(config.clone(), "let a = 'hello', 'world';", "let a = \"…\", \"…\";\n");
+        test_handle_input(
+            config.clone(),
+            "let a = 'hello', 'world';",
+            "let a = \"…\", \"…\";\n",
+        );
 
-        test_handle_input(config.clone(), "let a = \"hello /* world \";", "let a = \"…\";\n");
-        test_handle_input(config.clone(), "let a = \"hello /* world \";\n*/ this is // normal", "let a = \"…\";\n*/ this is \n");
+        test_handle_input(
+            config.clone(),
+            "let a = \"hello /* world \";",
+            "let a = \"…\";\n",
+        );
+        test_handle_input(
+            config.clone(),
+            "let a = \"hello /* world \";\n*/ this is // normal",
+            "let a = \"…\";\n*/ this is \n",
+        );
     }
 
     #[test]
     fn test_blacklist() {
-        let config = LangConfig::default()
-            .string("'")
-            .blacklist("\\'");
+        let config = LangConfig::default().string("'").blacklist("\\'");
 
         test_handle_input(config.clone(), "let a = '\\'';", "let a = '…';\n");
-        test_handle_input(config.clone(), "let a = 'hello \\' world';", "let a = '…';\n");
+        test_handle_input(
+            config.clone(),
+            "let a = 'hello \\' world';",
+            "let a = '…';\n",
+        );
     }
 }
