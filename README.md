@@ -14,9 +14,16 @@ Its main advantages over other methods are:
 - Accurately handles nested comments, strings and interactions between different kinds of comments
 - Integrates natively with `ripgrep`, so using it is as simple as passing one additional parameter
 
-## Installation and usage
+## Installation
 
-*Note: the installation instructions will change once I find the time to publish this app to crates.io*
+If you have `cargo` installed already, then you simply need to run:
+
+```sh
+cargo install just-the-code
+```
+
+If you instead wish to make changes to the source code, or install it somewhere else,
+then you can run the following:
 
 ```sh
 # Grab the code
@@ -28,11 +35,12 @@ cd just-the-code/
 # Build the code
 cargo build --release
 
-# Install it in your local PATH
-cargo install --path .
+# The built binary will be ./target/release/just-the-code
 ```
 
-To then use it, simply add `--pre just-the-code` to your ripgrep commands. For instance:
+## Usage
+
+To use this tool with ripgrep, simply add `--pre just-the-code` to your command. For instance:
 
 ```sh
 # Noisy, since a lot of "hello"s are present in strings in the code:
@@ -42,8 +50,15 @@ rg "hello"
 rg --pre just-the-code "hello"
 ```
 
+Alternatively, you can use the tool in standalone mode. For instance:
 
+```sh
+just-the-code src/parse.rs | bat --language rust
+```
 
+A few options are available to customize `just-the-code`'s behavior, which can be seen by running `just-the-code --help`.
+To make these options work together with ripgrep, you will need to create custom bash scripts that themselves invoke `just-the-code` with the options you need.
+You can find [more information on the ripgrep guide](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md#preprocessor).
 
 ## Configuring
 
