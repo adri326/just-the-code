@@ -1,3 +1,4 @@
+use gumdrop::Options;
 use indexmap::IndexMap;
 
 use serde::{Deserialize, Serialize};
@@ -79,4 +80,30 @@ impl Config {
             langs: self.langs,
         }
     }
+}
+
+#[derive(Options)]
+pub struct RuntimeConfig {
+    #[options(free)]
+    pub filename: Option<String>,
+
+    pub help: bool,
+
+    // TODO: investigate how expensive it would be to just read the file by default.
+    #[options(
+        help = "When set, the file passed will be read. By default, the file is read from stdin."
+    )]
+    pub read: bool,
+
+    #[options(
+        short = "s",
+        help = "When set, strings will be kept in the output file, ignoring the behaviour specified by the config file."
+    )]
+    pub keep_strings: bool,
+
+    #[options(
+        short = "S",
+        help = "When set, strings will be removed from the output file, ignoring the behaviour specified by the config file."
+    )]
+    pub remove_strings: bool,
 }

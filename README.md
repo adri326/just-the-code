@@ -42,7 +42,8 @@ rg "hello"
 rg --pre just-the-code "hello"
 ```
 
-*Note: I plan on adding a few options that can be passed to `just-the-code`, so that it can be used outside of ripgrep as well.*
+
+
 
 ## Configuring
 
@@ -85,14 +86,16 @@ If disabled (which is the default), that same piece of code will instead become 
 
 ### Note on `\"`
 
-If your languages uses `"` for strings, then simply adding `\"` to the blacklist is not going to be enough:
+If your languages uses `"` for strings and allows one to escape quotation marks within strings by typing `\"`,
+then simply adding `\"` to the blacklist is not going to be enough:
 `"\\"` will parse incorrectly, since `\"` will be seen as an escaped quotation mark.
 
-To fix that, blacklist tokens are implemented to be mutually exclusive: two blacklist tokens cannot overlap when matched on a string.
-This means that if you also add `\\` to the blacklist, then `"\\"` will parse correctly:
-`\\` will be seen as one blacklist token, and `\"` won't be interpreted as an escaped quotation mark.
+To fix that, blacklist tokens are implemented to be mutually exclusive:
+two blacklist tokens cannot overlap.
+This means that if you also add `\\` to the blacklist, then `"\\"` will now parse correctly:
+`\\` will be seen as one blacklist token, blocking `\"` from being interpreted as an escaped quotation mark.
 
 ## Known issues
 
-The performance of `ripgrep` also severaly drops when adding `--pre`, since ripgrep essentially needs to `fork()` once for each file searched.
+The performance of `ripgrep` severely drops when adding `--pre`, since ripgrep essentially needs to `fork()` once for each file searched.
 It might be possible in the future to integrate `just-the-code` directly within `ripgrep`, so that everything can be done within the same process.

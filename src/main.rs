@@ -1,3 +1,7 @@
+use std::io::{BufRead, BufReader};
+
+use gumdrop::Options;
+
 mod config;
 use config::*;
 
@@ -33,15 +37,13 @@ fn load_config() -> Config {
 fn main() {
     let config = load_config();
 
-    let args = std::env::args().collect::<Vec<_>>();
-    if args.len() <= 1 || args.last().map_or(false, |arg| !arg.contains('.')) {
-        // No filename given, default to noop
-        noop();
-    }
+    let runtime_config = RuntimeConfig::parse_args_default_or_exit();
 
-    let extension = args
-        .last()
-        .unwrap()
+    let Some(filename) = runtime_config.filename else {
+        return noop(std::io::stdin().lock());
+    };
+
+    let extension = filename
         .split_terminator(".")
         .last()
         .unwrap()
@@ -54,28 +56,50 @@ fn main() {
             .is_some()
         {
             lang_config.keep_strings = config.keep_strings;
-            handle_input(
-                lang_config,
-                std::io::stdin().lock(),
-                std::io::stdout().lock(),
-            );
+
+            if runtime_config.keep_strings {
+                lang_config.keep_strings = true;
+            } else if runtime_config.remove_strings {
+                lang_config.keep_strings = false;
+            }
+
+            if runtime_config.read {
+                handle_input(
+                    lang_config,
+                    BufReader::new(
+                        std::fs::File::open(filename).expect("Couldn't open specified file"),
+                    ),
+                    std::io::stdout().lock(),
+                );
+            } else {
+                handle_input(
+                    lang_config,
+                    std::io::stdin().lock(),
+                    std::io::stdout().lock(),
+                );
+            }
             return;
         }
     }
 
     // No language matched, default to noop
-    noop();
+    if runtime_config.read {
+        noop(BufReader::new(
+            std::fs::File::open(filename).expect("Couldn't open specified file"),
+        ));
+    } else {
+        noop(std::io::stdin().lock());
+    }
 }
 
 /// If the file does not need to be processed, then we simply pipe it through
-fn noop() {
+fn noop(mut input: impl BufRead) {
     use std::io::*;
 
-    let mut stdin = stdin().lock();
     let mut stdout = stdout().lock();
     // When ripgrep isn't interested anymore in what we're outputting, it may choose to close the pipe before we're finished writing to it,
     // so we have to handle that case and gracefully shut down:
-    match copy(&mut stdin, &mut stdout) {
+    match copy(&mut input, &mut stdout) {
         Ok(_) => {}
         Err(err) => {
             if err.kind() != ErrorKind::BrokenPipe {
