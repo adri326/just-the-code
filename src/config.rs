@@ -89,11 +89,11 @@ pub struct RuntimeConfig {
 
     pub help: bool,
 
-    // TODO: investigate how expensive it would be to just read the file by default.
-    #[options(
-        help = "When set, the file passed will be read. By default, the file is read from stdin."
-    )]
-    pub read: bool,
+    #[options(help = "When set, the file will be read from stdin instead.")]
+    pub read_stdin: bool,
+
+    #[options(help = "When set, overrides which language to interpret the file as.")]
+    pub language: Option<String>,
 
     #[options(
         short = "s",

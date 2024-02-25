@@ -36,59 +36,23 @@ fn load_config() -> Config {
 
 fn main() {
     let config = load_config();
-
     let runtime_config = RuntimeConfig::parse_args_default_or_exit();
 
-    let Some(filename) = runtime_config.filename else {
-        return noop(std::io::stdin().lock());
+    let Some(input_stream) = get_input_stream(&runtime_config) else {
+        eprintln!(
+            "No input file specified, or --read-stdin not given. Run `{} --help` for more information.",
+            std::env::args().nth(0).unwrap()
+        );
+        return;
     };
 
-    let extension = filename
-        .split_terminator(".")
-        .last()
-        .unwrap()
-        .to_lowercase();
-    for mut lang_config in config.langs.into_values().rev() {
-        if lang_config
-            .extensions
-            .iter()
-            .find(|ext| **ext == extension)
-            .is_some()
-        {
-            lang_config.keep_strings = config.keep_strings;
-
-            if runtime_config.keep_strings {
-                lang_config.keep_strings = true;
-            } else if runtime_config.remove_strings {
-                lang_config.keep_strings = false;
-            }
-
-            if runtime_config.read {
-                handle_input(
-                    lang_config,
-                    BufReader::new(
-                        std::fs::File::open(filename).expect("Couldn't open specified file"),
-                    ),
-                    std::io::stdout().lock(),
-                );
-            } else {
-                handle_input(
-                    lang_config,
-                    std::io::stdin().lock(),
-                    std::io::stdout().lock(),
-                );
-            }
-            return;
+    match get_lang_config(config, &runtime_config) {
+        Some(lang_config) => {
+            handle_input(lang_config, input_stream, std::io::stdout().lock());
         }
-    }
-
-    // No language matched, default to noop
-    if runtime_config.read {
-        noop(BufReader::new(
-            std::fs::File::open(filename).expect("Couldn't open specified file"),
-        ));
-    } else {
-        noop(std::io::stdin().lock());
+        None => {
+            noop(input_stream);
+        }
     }
 }
 
@@ -109,4 +73,55 @@ fn noop(mut input: impl BufRead) {
     }
 
     std::process::exit(0);
+}
+
+#[inline]
+fn get_input_stream(runtime_config: &RuntimeConfig) -> Option<Box<dyn BufRead>> {
+    if runtime_config.filename.is_some() {
+        let filename = runtime_config.filename.clone().unwrap();
+        Some(Box::new(BufReader::new(
+            std::fs::File::open(filename).expect("Couldn't open specified file"),
+        )))
+    } else if runtime_config.read_stdin {
+        Some(Box::new(std::io::stdin().lock()))
+    } else {
+        None
+    }
+}
+
+fn copy_config(lang_config: &mut LangConfig, config: &Config, runtime_config: &RuntimeConfig) {
+    if runtime_config.keep_strings {
+        lang_config.keep_strings = true;
+    } else if runtime_config.remove_strings {
+        lang_config.keep_strings = false;
+    } else {
+        lang_config.keep_strings = config.keep_strings;
+    }
+}
+
+fn get_lang_config(mut config: Config, runtime_config: &RuntimeConfig) -> Option<LangConfig> {
+    if let Some(lang) = &runtime_config.language {
+        if let Some(mut lang_config) = config.langs.get(lang).cloned() {
+            copy_config(&mut lang_config, &config, &runtime_config);
+            return Some(lang_config);
+        }
+    }
+
+    let Some(filename) = &runtime_config.filename else {
+        return None;
+    };
+
+    let extension = filename
+        .split_terminator(".")
+        .last()
+        .unwrap()
+        .to_lowercase();
+    for mut lang_config in std::mem::take(&mut config.langs).into_values().rev() {
+        if lang_config.extensions.iter().any(|ext| **ext == extension) {
+            copy_config(&mut lang_config, &config, &runtime_config);
+            return Some(lang_config);
+        }
+    }
+
+    None
 }
